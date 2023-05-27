@@ -66,7 +66,7 @@ static const uint8_t num_DSM_channels = 6; //If using DSM RX, change this to mat
 #include <PWMServo.h> //Commanding any extra actuators, installed with teensyduino installer
 
 #if defined USE_SBUS_RX
-  #include "src/SBUS/SBUS.h"   //sBus interface
+  #include "src/SBUS/sbus.h"   //sBus interface
 #endif
 
 #if defined USE_DSM_RX
@@ -260,7 +260,7 @@ unsigned long channel_1_pwm, channel_2_pwm, channel_3_pwm, channel_4_pwm, channe
 unsigned long channel_1_pwm_prev, channel_2_pwm_prev, channel_3_pwm_prev, channel_4_pwm_prev;
 
 #if defined USE_SBUS_RX
-  SBUS sbus(Serial5);
+  bfs::SbusRx sbus(&Serial5, true, true);
   uint16_t sbusChannels[16];
   bool sbusFailSafe;
   bool sbusLostFrame;
@@ -341,7 +341,7 @@ void setup() {
   channel_6_pwm = channel_6_fs;
 
   //Initialize IMU communication
-  IMUinit();
+  // IMUinit();
 
   delay(5);
 
@@ -406,8 +406,8 @@ void loop() {
   //printLoopRate();      //Prints the time between loops in microseconds (expected: microseconds between loop iterations)
 
   //Get vehicle state
-  getIMUdata(); //Pulls raw gyro, accelerometer, and magnetometer data from IMU and LP filters to remove noise
-  Madgwick(GyroX, -GyroY, -GyroZ, -AccX, AccY, AccZ, MagY, -MagX, MagZ, dt); //Updates roll_IMU, pitch_IMU, and yaw_IMU angle estimates (degrees)
+  // getIMUdata(); //Pulls raw gyro, accelerometer, and magnetometer data from IMU and LP filters to remove noise
+  // Madgwick(GyroX, -GyroY, -GyroZ, -AccX, AccY, AccZ, MagY, -MagX, MagZ, dt); //Updates roll_IMU, pitch_IMU, and yaw_IMU angle estimates (degrees)
 
   //Compute desired state
   getDesState(); //Convert raw commands to normalized values based on saturated control limits
@@ -1163,17 +1163,21 @@ void getCommands() {
     channel_6_pwm = getRadioPWM(6);
     
   #elif defined USE_SBUS_RX
-    if (sbus.read(&sbusChannels[0], &sbusFailSafe, &sbusLostFrame))
+    if (sbus.Read())
     {
       //sBus scaling below is for Taranis-Plus and X4R-SB
-      float scale = 0.615;  
-      float bias  = 895.0; 
-      channel_1_pwm = sbusChannels[0] * scale + bias;
-      channel_2_pwm = sbusChannels[1] * scale + bias;
-      channel_3_pwm = sbusChannels[2] * scale + bias;
-      channel_4_pwm = sbusChannels[3] * scale + bias;
-      channel_5_pwm = sbusChannels[4] * scale + bias;
-      channel_6_pwm = sbusChannels[5] * scale + bias; 
+      bfs:: SbusData data = sbus.data();
+      for (int8_t i = 0; i < data.NUM_CH; i++) {
+        sbusChannels[i] = data.ch[i];
+      }
+      channel_1_pwm = sbusChannels[0];
+      channel_2_pwm = sbusChannels[1];
+      channel_3_pwm = sbusChannels[2];
+      channel_4_pwm = sbusChannels[3];
+      channel_5_pwm = sbusChannels[4];
+      channel_6_pwm = sbusChannels[5];
+      sbusFailSafe = data.failsafe;
+      sbusLostFrame = data.lost_frame;
     }
 
   #elif defined USE_DSM_RX

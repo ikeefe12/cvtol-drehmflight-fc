@@ -43,7 +43,7 @@ void radioSetup() {
 
   //SBUS Recevier 
   #elif defined USE_SBUS_RX
-    sbus.begin();
+    sbus.Begin();
 
   //DSM receiver
   #elif defined USE_DSM_RX

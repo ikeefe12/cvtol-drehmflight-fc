@@ -1,82 +1,149 @@
 /*
-	SBUS.h
-	Brian R Taylor
-	brian.taylor@bolderflight.com
-
-	Copyright (c) 2016 Bolder Flight Systems
-
-  This program is free software: you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation, either version 3 of the License, or
-  (at your option) any later version.
-
-  This program is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
-
-  You should have received a copy of the GNU General Public License
-  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+* Brian R Taylor
+* brian.taylor@bolderflight.com
+*
+* Copyright (c) 2022 Bolder Flight Systems Inc
+*
+* Permission is hereby granted, free of charge, to any person obtaining a copy
+* of this software and associated documentation files (the “Software”), to
+* deal in the Software without restriction, including without limitation the
+* rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+* sell copies of the Software, and to permit persons to whom the Software is
+* furnished to do so, subject to the following conditions:
+*
+* The above copyright notice and this permission notice shall be included in
+* all copies or substantial portions of the Software.
+*
+* THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+* IN THE SOFTWARE.
 */
 
-#ifndef SBUS_h
-#define SBUS_h
+#ifndef SRC_SBUS_H_
+#define SRC_SBUS_H_
 
-#include "Arduino.h"
-#include "elapsedMillis.h"
-
-/*
-* Hardware Serial Supported:
-* Teensy 3.0 || Teensy 3.1/3.2 || Teensy 3.5 || Teensy 3.6 || Teensy LC  || STM32L4 || Maple Mini || Arduino Mega 2560 || ESP32
-*/
-#if defined(__MK20DX128__) 	|| defined(__MK20DX256__) || defined(__MK64FX512__)	\
-	|| defined(__MK66FX1M0__) || defined(__MKL26Z64__) 	|| defined(__IMXRT1052__) \
-	|| defined(STM32L496xx)		|| defined(STM32L476xx) 	|| defined(STM32L433xx) \
-	|| defined(STM32L432xx)		|| defined(_BOARD_MAPLE_MINI_H_) \
-	|| defined(__AVR_ATmega2560__) || defined(ESP32)
+#if defined(ARDUINO)
+#include <Arduino.h>
+#else
+#include <cstddef>
+#include <cstdint>
+#include "core/core.h"
 #endif
 
-class SBUS{
-	public:
-		SBUS(HardwareSerial& bus);
-		void begin();
-		bool read(uint16_t* channels, bool* failsafe, bool* lostFrame);
-		bool readCal(float* calChannels, bool* failsafe, bool* lostFrame);
-		void write(uint16_t* channels);
-		void writeCal(float *channels);
-		void setEndPoints(uint8_t channel,uint16_t min,uint16_t max);
-		void getEndPoints(uint8_t channel,uint16_t *min,uint16_t *max);
-		void setReadCal(uint8_t channel,float *coeff,uint8_t len);
-		void getReadCal(uint8_t channel,float *coeff,uint8_t len);
-		void setWriteCal(uint8_t channel,float *coeff,uint8_t len);
-		void getWriteCal(uint8_t channel,float *coeff,uint8_t len);
-		~SBUS();
-  private:
-		const uint32_t _sbusBaud = 100000;
-		static const uint8_t _numChannels = 16;
-		const uint8_t _sbusHeader = 0x0F;
-		const uint8_t _sbusFooter = 0x00;
-		const uint8_t _sbus2Footer = 0x04;
-		const uint8_t _sbus2Mask = 0x0F;
-		const uint32_t SBUS_TIMEOUT_US = 7000;
-		uint8_t _parserState, _prevByte = _sbusFooter, _curByte;
-		static const uint8_t _payloadSize = 24;
-		uint8_t _payload[_payloadSize];
-		const uint8_t _sbusLostFrame = 0x04;
-		const uint8_t _sbusFailSafe = 0x08;
-		const uint16_t _defaultMin = 172;
-		const uint16_t _defaultMax = 1811;
-		uint16_t _sbusMin[_numChannels];
-		uint16_t _sbusMax[_numChannels];
-		float _sbusScale[_numChannels];
-		float _sbusBias[_numChannels];
-		float **_readCoeff, **_writeCoeff;
-		uint8_t _readLen[_numChannels],_writeLen[_numChannels];
-		bool _useReadCoeff[_numChannels], _useWriteCoeff[_numChannels];
-		HardwareSerial* _bus;
-		bool parse();
-		void scaleBias(uint8_t channel);
-		float PolyVal(size_t PolySize, float *Coefficients, float X);
+namespace bfs {
+
+struct SbusData {
+  bool lost_frame;
+  bool failsafe;
+  bool ch17, ch18;
+  static constexpr int8_t NUM_CH = 16;
+  int16_t ch[NUM_CH];
 };
 
-#endif
+class SbusRx {
+ public:
+  #if defined(ESP32)
+  SbusRx(HardwareSerial *bus, const int8_t rxpin, const int8_t txpin,
+         const bool inv) : uart_(bus), inv_(inv), rxpin_(rxpin), txpin_(txpin)
+         {}
+  SbusRx(HardwareSerial *bus, const int8_t rxpin, const int8_t txpin,
+         const bool inv, const bool fast) : uart_(bus), inv_(inv), fast_(fast),
+                                            rxpin_(rxpin), txpin_(txpin) {}
+  #else
+  explicit SbusRx(HardwareSerial *bus) : uart_(bus) {}
+  SbusRx(HardwareSerial *bus, const bool inv) : uart_(bus), inv_(inv) {}
+  SbusRx(HardwareSerial *bus, const bool inv, const bool fast) : uart_(bus),
+                                                                 inv_(inv),
+                                                                 fast_(fast) {}
+  #endif
+  void Begin();
+  bool Read();
+  inline SbusData data() const {return data_;}
+
+ private:
+  /* Communication */
+  HardwareSerial *uart_;
+  bool inv_ = true;
+  bool fast_ = false;
+  #if defined(ESP32)
+  int8_t rxpin_, txpin_;
+  #endif
+  int32_t baud_ = 100000;
+  /* Message len */
+  static constexpr int8_t PAYLOAD_LEN_ = 23;
+  static constexpr int8_t HEADER_LEN_ = 1;
+  static constexpr int8_t FOOTER_LEN_ = 1;
+  /* SBUS message defs */
+  static constexpr int8_t NUM_SBUS_CH_ = 16;
+  static constexpr uint8_t HEADER_ = 0x0F;
+  static constexpr uint8_t FOOTER_ = 0x00;
+  static constexpr uint8_t FOOTER2_ = 0x04;
+  static constexpr uint8_t CH17_MASK_ = 0x01;
+  static constexpr uint8_t CH18_MASK_ = 0x02;
+  static constexpr uint8_t LOST_FRAME_MASK_ = 0x04;
+  static constexpr uint8_t FAILSAFE_MASK_ = 0x08;
+  /* Parsing state tracking */
+  int8_t state_ = 0;
+  uint8_t prev_byte_ = FOOTER_;
+  uint8_t cur_byte_;
+  /* Buffer for storing messages */
+  uint8_t buf_[25];
+  /* Data */
+  bool new_data_;
+  SbusData data_;
+  bool Parse();
+};
+
+class SbusTx {
+ public:
+  #if defined(ESP32)
+  SbusTx(HardwareSerial *bus, const int8_t rxpin, const int8_t txpin,
+         const bool inv) : uart_(bus), inv_(inv), rxpin_(rxpin), txpin_(txpin)
+         {}
+  SbusTx(HardwareSerial *bus, const int8_t rxpin, const int8_t txpin,
+         const bool inv, const bool fast) : uart_(bus), inv_(inv), fast_(fast),
+                                            rxpin_(rxpin), txpin_(txpin) {}
+  #else
+  explicit SbusTx(HardwareSerial *bus) : uart_(bus) {}
+  SbusTx(HardwareSerial *bus, const bool inv) : uart_(bus), inv_(inv) {}
+  SbusTx(HardwareSerial *bus, const bool inv, const bool fast) : uart_(bus),
+                                                                 inv_(inv),
+                                                                 fast_(fast) {}
+  #endif
+  void Begin();
+  void Write();
+  inline void data(const SbusData &data) {data_ = data;}
+  inline SbusData data() const {return data_;}
+
+ private:
+  /* Communication */
+  HardwareSerial *uart_;
+  bool inv_ = true;
+  bool fast_ = false;
+  #if defined(ESP32)
+  int8_t rxpin_, txpin_;
+  #endif
+  int32_t baud_ = 100000;
+  /* Message len */
+  static constexpr int8_t BUF_LEN_ = 25;
+  /* SBUS message defs */
+  static constexpr int8_t NUM_SBUS_CH_ = 16;
+  static constexpr uint8_t HEADER_ = 0x0F;
+  static constexpr uint8_t FOOTER_ = 0x00;
+  static constexpr uint8_t FOOTER2_ = 0x04;
+  static constexpr uint8_t CH17_MASK_ = 0x01;
+  static constexpr uint8_t CH18_MASK_ = 0x02;
+  static constexpr uint8_t LOST_FRAME_MASK_ = 0x04;
+  static constexpr uint8_t FAILSAFE_MASK_ = 0x08;
+  /* Data */
+  uint8_t buf_[BUF_LEN_];
+  SbusData data_;
+};
+
+}  // namespace bfs
+
+#endif  // SRC_SBUS_H_
