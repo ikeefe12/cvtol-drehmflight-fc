@@ -261,7 +261,6 @@ unsigned long channel_1_pwm_prev, channel_2_pwm_prev, channel_3_pwm_prev, channe
 
 #if defined USE_SBUS_RX
   bfs::SbusRx sbus(&Serial5, true, true);
-  uint16_t sbusChannels[16];
   bool sbusFailSafe;
   bool sbusLostFrame;
 #endif
@@ -1165,17 +1164,16 @@ void getCommands() {
   #elif defined USE_SBUS_RX
     if (sbus.Read())
     {
+      float scale = 0.63;
+      int offset = 874;
       //sBus scaling below is for Taranis-Plus and X4R-SB
       bfs:: SbusData data = sbus.data();
-      for (int8_t i = 0; i < data.NUM_CH; i++) {
-        sbusChannels[i] = data.ch[i];
-      }
-      channel_1_pwm = sbusChannels[0];
-      channel_2_pwm = sbusChannels[1];
-      channel_3_pwm = sbusChannels[2];
-      channel_4_pwm = sbusChannels[3];
-      channel_5_pwm = sbusChannels[4];
-      channel_6_pwm = sbusChannels[5];
+      channel_1_pwm = data.ch[2] * scale + offset; // THROTTLE
+      channel_2_pwm = data.ch[0] * scale + offset; // ROLL
+      channel_3_pwm = data.ch[1] * scale + offset; // PITCH
+      channel_4_pwm = data.ch[3] * scale + offset; // YAW
+      channel_5_pwm = data.ch[4] * scale + offset; 
+      channel_6_pwm = data.ch[7] * scale + offset;
       sbusFailSafe = data.failsafe;
       sbusLostFrame = data.lost_frame;
     }
@@ -1237,6 +1235,7 @@ void failSafe() {
 
   //If any failures, set to default failsafe values
   if ((check1 + check2 + check3 + check4 + check5 + check6) > 0) {
+    Serial.println("FAILED");
     channel_1_pwm = channel_1_fs;
     channel_2_pwm = channel_2_fs;
     channel_3_pwm = channel_3_fs;
