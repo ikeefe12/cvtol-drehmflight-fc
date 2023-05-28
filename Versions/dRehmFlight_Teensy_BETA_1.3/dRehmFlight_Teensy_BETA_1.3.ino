@@ -340,7 +340,7 @@ void setup() {
   channel_6_pwm = channel_6_fs;
 
   //Initialize IMU communication
-  // IMUinit();
+  IMUinit();
 
   delay(5);
 
@@ -395,7 +395,7 @@ void loop() {
   //Print data at 100hz (uncomment one at a time for troubleshooting) - SELECT ONE:
   printRadioData();     //Prints radio pwm values (expected: 1000 to 2000)
   //printDesiredState();  //Prints desired vehicle state commanded in either degrees or deg/sec (expected: +/- maxAXIS for roll, pitch, yaw; 0 to 1 for throttle)
-  //printGyroData();      //Prints filtered gyro data direct from IMU (expected: ~ -250 to 250, 0 at rest)
+  // printGyroData();      //Prints filtered gyro data direct from IMU (expected: ~ -250 to 250, 0 at rest)
   //printAccelData();     //Prints filtered accelerometer data direct from IMU (expected: ~ -2 to 2; x,y 0 when level, z 1 when level)
   //printMagData();       //Prints filtered magnetometer data direct from IMU (expected: ~ -300 to 300)
   //printRollPitchYaw();  //Prints roll, pitch, and yaw angles in degrees from Madgwick filter (expected: degrees, 0 when level)
@@ -405,8 +405,8 @@ void loop() {
   //printLoopRate();      //Prints the time between loops in microseconds (expected: microseconds between loop iterations)
 
   //Get vehicle state
-  // getIMUdata(); //Pulls raw gyro, accelerometer, and magnetometer data from IMU and LP filters to remove noise
-  // Madgwick(GyroX, -GyroY, -GyroZ, -AccX, AccY, AccZ, MagY, -MagX, MagZ, dt); //Updates roll_IMU, pitch_IMU, and yaw_IMU angle estimates (degrees)
+  getIMUdata(); //Pulls raw gyro, accelerometer, and magnetometer data from IMU and LP filters to remove noise
+  Madgwick(GyroX, -GyroY, -GyroZ, -AccX, AccY, AccZ, MagY, -MagX, MagZ, dt); //Updates roll_IMU, pitch_IMU, and yaw_IMU angle estimates (degrees)
 
   //Compute desired state
   getDesState(); //Convert raw commands to normalized values based on saturated control limits
@@ -1111,7 +1111,7 @@ void scaleCommands() {
    * which are used to command the servos.
    */
   //Scaled to 125us - 250us for oneshot125 protocol
-  m1_command_PWM = m1_command_scaled*125 + 125;
+  m1_command_PWM = 175; // m1_command_scaled*125 + 125;
   m2_command_PWM = m2_command_scaled*125 + 125;
   m3_command_PWM = m3_command_scaled*125 + 125;
   m4_command_PWM = m4_command_scaled*125 + 125;
@@ -1235,7 +1235,7 @@ void failSafe() {
 
   //If any failures, set to default failsafe values
   if ((check1 + check2 + check3 + check4 + check5 + check6) > 0) {
-    Serial.println("FAILED");
+    // Serial.println("FAILED Radio Signal");
     channel_1_pwm = channel_1_fs;
     channel_2_pwm = channel_2_fs;
     channel_3_pwm = channel_3_fs;
@@ -1273,6 +1273,7 @@ void commandMotors() {
   while (wentLow < 6 ) { //Keep going until final (6th) pulse is finished, then done
     timer = micros();
     if ((m1_command_PWM <= timer - pulseStart) && (flagM1==0)) {
+      // Serial.println(m1_command_PWM);     
       digitalWrite(m1Pin, LOW);
       wentLow = wentLow + 1;
       flagM1 = 1;
@@ -1444,7 +1445,7 @@ void throttleCut() {
    * called before commandMotors() is called so that the last thing checked is if the user is giving permission to command
    * the motors to anything other than minimum value. Safety first. 
    */
-  if (channel_5_pwm > 1500) {
+  if (channel_5_pwm < 1500) {
     m1_command_PWM = 120;
     m2_command_PWM = 120;
     m3_command_PWM = 120;
